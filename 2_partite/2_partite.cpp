@@ -47,7 +47,7 @@ generator<ShiftedGraph &&> gen_graphs(int s, int current_x, int max_y) {
     co_yield ShiftedGraph{s, {}};
   } else {
     for (int x = current_x; x <= s; ++x) {
-      for (int y = 1; y <= max_y; ++y) {
+      for (int y = (x == s ? 0 : 1); y <= max_y; ++y) {
         for (auto &&graph : gen_graphs(s, x + 1, y - 1)) {
           graph.antipath.emplace_back(x, y);
           co_yield std::move(graph);

@@ -13,4 +13,9 @@ A|@@|x@|
 -------------------------
 sequence {3,1}
 doesn't admit a matching, corresponding sequences:
+
+C|--|--|
+B|@ |  |
+A|@@|x |
+.|12|12|
 -------------------------

@@ -59,11 +59,11 @@ struct ShiftedGraph {
 generator<ShiftedGraph &&> gen_graphs(int s, int current_x, int max_y) {
   // cerr << "Generating graph " << s << " " << edge_budget << " " << current_x
   // << " " << max_y << "\n";
-  if (current_x >= s || max_y <= 0) {
+  if (current_x > s || max_y <= 0) {
     co_yield ShiftedGraph{s, {}};
   } else {
     for (int x = current_x; x <= s; ++x) {
-      for (int y = 1; y <= max_y; ++y) {
+      for (int y = (x == s ? 0 : 1); y <= max_y; ++y) {
         for (auto &&graph : gen_graphs(s, x + 1, y - 1)) {
           graph.antipath.emplace_back(x, y);
           co_yield std::move(graph);
@@ -183,7 +183,7 @@ void print_graph_sequence(
 bool check_embedded(
     const vector<reference_wrapper<const ShiftedGraph>> &graph_sequence) {
   for (unsigned i = 0; i + 1 < graph_sequence.size(); ++i) {
-    if (!graph_sequence[i + 1].get().lies_inside(graph_sequence[i].get())) {
+    if (!graph_sequence[i].get().lies_inside(graph_sequence[i + 1].get())) {
       return false;
     }
   }
@@ -221,11 +221,17 @@ void draw_graph(std::vector<int> size_sequence,
         first_matching = matching.matching;
       }
     }
+    // print_graph_sequence(graph_sequence, first_matching);
     if (!ok) {
       continue;
     }
     matching.reset();
     if (!gen_matching(graph_sequence.begin(), graph_sequence.end(), matching)) {
+      if (!check_embedded(graph_sequence)) {
+        cerr << "###############################" << endl;
+        cerr << "NOT EMBEDDED" << endl;
+        cerr << "###############################" << endl;
+      }
       print_graph_sequence(graph_sequence, first_matching);
       // break;
       // cout << "BREAKING BREAKING BREAKING" << "\n";

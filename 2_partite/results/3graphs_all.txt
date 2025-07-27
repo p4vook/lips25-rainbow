@@ -13,32 +13,68 @@ B|@@@|@x@|@@@|
 A|@@@|@@@|x@@|
 .|123|123|123|
 -------------------------
-sequence {7,4,4}
+sequence {7,5,3}
 doesn't admit a matching, corresponding sequences:
 
 D|---|---|---|
-C|@  |   |   |
-B|@@@|@  |x  |
-A|@@@|@x@|@@@|
+C|@@ |@  |   |
+B|@@ |@x |@  |
+A|@@@|@@ |x@ |
 .|123|123|123|
 
 D|---|---|---|
 C|@  |   |   |
+B|@@@|@x |@  |
+A|@@@|@@@|x@ |
+.|123|123|123|
+-------------------------
+sequence {7,7,2}
+doesn't admit a matching, corresponding sequences:
+
+D|---|---|---|
+C|@  |@  |   |
+B|@@@|@x@|@  |
+A|@@@|@@@|x  |
+.|123|123|123|
+
+D|---|---|---|
+C|@@ |@@ |   |
+B|@@ |@x |   |
+A|@@@|@@@|x@ |
+.|123|123|123|
+-------------------------
+sequence {8,4,4}
+doesn't admit a matching, corresponding sequences:
+
+D|---|---|---|
+C|@@ |   |   |
 B|@@@|@x |@@ |
 A|@@@|@@ |x@ |
 .|123|123|123|
 -------------------------
-sequence {7,5,3}
-doesn't admit a matching, corresponding sequences:
--------------------------
-sequence {7,7,2}
-doesn't admit a matching, corresponding sequences:
--------------------------
 sequence {8,5,2}
 doesn't admit a matching, corresponding sequences:
+
+D|---|---|---|
+C|@@ |@  |   |
+B|@@@|@x |@  |
+A|@@@|@@ |x  |
+.|123|123|123|
+
+D|---|---|---|
+C|@@ |   |   |
+B|@@@|@x |   |
+A|@@@|@@@|x@ |
+.|123|123|123|
 -------------------------
 sequence {8,6,1}
 doesn't admit a matching, corresponding sequences:
+
+D|---|---|---|
+C|@@ |@  |   |
+B|@@@|@x |   |
+A|@@@|@@@|x  |
+.|123|123|123|
 -------------------------
 sequence {9,3,3}
 doesn't admit a matching, corresponding sequences:

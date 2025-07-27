@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <format>
 #include <generator>
@@ -12,29 +13,51 @@
 
 using namespace std;
 
+struct MatchingState {
+  vector<char> used;
+  vector<pair<int, int>> matching;
+
+  explicit MatchingState(int s) : used(2 * s + 1) {}
+
+  void reset() {
+    ranges::fill(used, 0);
+    matching.clear();
+  }
+};
+
 struct ShiftedGraph {
   int s;
   vector<pair<int, int>> antipath;
 
-  generator<const pair<int, int> &> edges(vector<char> *used = nullptr) const {
+  generator<const pair<int, int> &> edges() const {
     int x = 1;
-    for (auto [x0, y0] : antipath | views::reverse) {
+    for (auto [x0, y0] : antipath) {
       for (; x <= x0; ++x) {
-        if (used && (*used)[x]) {
-          continue;
-        }
-        for (int y = 1; y <= min(x - 1, y0); ++y) {
+        for (int y = 1; y < x && y <= y0; ++y) {
           co_yield {x, y};
         }
       }
     }
   }
 
+  int edge_count() const {
+    int x = 1;
+    int res = 0;
+    for (auto [x0, y0] : antipath) {
+      for (; x <= x0; ++x) {
+        res += min(x - 1, y0);
+      }
+    }
+    return res;
+  }
+
   bool lies_inside(const ShiftedGraph &other) const {
-    auto other_edges = other.edges() | ranges::to<vector>();
-    set<pair<int, int>> edge_set(other_edges.begin(), other_edges.end());
+    set<pair<int, int>> other_edges;
+    for (const auto &pr : other.edges()) {
+      other_edges.insert(pr);
+    }
     for (const auto &pr : edges()) {
-      if (!edge_set.contains(pr)) {
+      if (!other_edges.contains(pr)) {
         return false;
       }
     }
@@ -42,79 +65,58 @@ struct ShiftedGraph {
   }
 };
 
-generator<ShiftedGraph &&> gen_graphs(int s, int edge_budget, int current_x,
-                                      int max_y) {
+generator<ShiftedGraph &&> gen_graphs(int s, int current_x, int max_y) {
   // cerr << "Generating graph " << s << " " << edge_budget << " " << current_x
   // << " " << max_y << "\n";
-  assert(edge_budget >= 0);
-  if (edge_budget == 0) {
+  if (current_x > 2 * s || max_y <= 0) {
     co_yield ShiftedGraph{s, {}};
-  } else if (current_x <= 2 * s) {
-    for (int x = current_x; x <= min(2 * s, current_x + edge_budget); ++x) {
-      auto calc_new_edges = [&](int y) {
-        int total = 0;
-        // Split at y+1: vertices <= y+1 contribute (vertex-1) edges each
-        // vertices > y+1 contribute y edges each
-
-        if (current_x > y + 1) {
-          // All vertices from current_x to x contribute y edges
-          total = (x - current_x + 1) * y;
-        } else if (x <= y + 1) {
-          // All vertices contribute (vertex-1) edges
-          // Sum from current_x-1 to x-1
-          total = (x - current_x + 1) * (current_x + x - 2) / 2;
-        } else {
-          // Mixed case: split at y+1
-          // Vertices [current_x, y+1] contribute sum from current_x-1 to y
-          total = (y - current_x + 2) * (current_x + y - 1) / 2;
-          // Vertices [y+2, x] contribute y edges each
-          total += (x - y - 1) * y;
-        }
-        return total;
-      };
-      for (int y = 1;
-           y <= x - 1 && y <= max_y && calc_new_edges(y) <= edge_budget; ++y) {
-        for (auto &&graph :
-             gen_graphs(s, edge_budget - calc_new_edges(y), x + 1, y - 1)) {
+  } else {
+    for (int x = current_x; x <= 2 * s; ++x) {
+      for (int y = (x == 2 * s ? 0 : 1); y < x && y <= max_y; ++y) {
+        for (auto &&graph : gen_graphs(s, x + 1, y - 1)) {
           graph.antipath.emplace_back(x, y);
-          co_yield move(graph);
+          co_yield std::move(graph);
         }
       }
     }
   }
 }
 
-optional<vector<pair<int, int>>> gen_matching(input_iterator auto graphs_begin,
-                                              input_iterator auto graphs_end,
-                                              vector<char> &used) {
+bool gen_matching(input_iterator auto graphs_begin,
+                  input_iterator auto graphs_end, MatchingState &state) {
   if (graphs_begin == graphs_end) {
-    return optional{vector<pair<int, int>>{}};
+    return true;
   }
-  auto next_graph = std::next(graphs_begin);
-  for (const auto &[x0, y0] : graphs_begin->get().edges(&used)) {
-    // cerr << "Taking edge " << x0 << " " << y0 << "\n";
-    if (used[x0] || used[y0]) {
-      continue;
+  int x = 1;
+  for (auto [x0, y0] : (graphs_begin++)->get().antipath) {
+    for (; x <= x0; ++x) {
+      if (state.used[x]) {
+        continue;
+      }
+      for (int y = 1; y < x && y <= y0; ++y) {
+        if (state.used[y]) {
+          continue;
+        }
+        state.used[x] = true;
+        state.used[y] = true;
+        state.matching.emplace_back(x, y);
+        if (gen_matching(graphs_begin, graphs_end, state)) {
+          return true;
+        }
+        state.matching.pop_back();
+        state.used[x] = false;
+        state.used[y] = false;
+      }
     }
-    used[x0] = true;
-    used[y0] = true;
-    if (auto matching = gen_matching(next_graph, graphs_end, used)) {
-      matching->emplace_back(x0, y0);
-      return optional{matching};
-    }
-    used[x0] = false;
-    used[y0] = false;
   }
-  return {};
+  return false;
 }
 
-generator<vector<int> &&> gen_size_sequence(int s, int leftover, int min_size,
-                                            optional<int> max_size = {}) {
+generator<vector<int> &&> gen_size_sequence(int s, int leftover, int min_size) {
   if (leftover <= 0) {
     co_yield {};
   } else {
-    for (int size = min_size; size <= (max_size ? *max_size : s * (2 * s - 1));
-         ++size) {
+    for (int size = min_size; size <= s * (2 * s - 1); ++size) {
       for (auto &&sequence : gen_size_sequence(s, leftover - 1, size)) {
         sequence.push_back(size);
         co_yield sequence;
@@ -124,15 +126,17 @@ generator<vector<int> &&> gen_size_sequence(int s, int leftover, int min_size,
   }
 }
 
-generator<vector<reference_wrapper<ShiftedGraph>> &&>
-gen_graph_sequences(int s, input_iterator auto size_begin,
-                    input_iterator auto size_end) {
+generator<vector<reference_wrapper<const ShiftedGraph>>>
+gen_graph_sequences(input_iterator auto size_begin,
+                    input_iterator auto size_end,
+                    const vector<vector<ShiftedGraph>> &graphs_by_size) {
   if (size_begin == size_end) {
     co_yield {};
   } else {
     // cerr << "Trying to generate graph sequences" << "\n";
-    for (auto &&sequence : gen_graph_sequences(s, next(size_begin), size_end)) {
-      for (auto &&graph : gen_graphs(s, *size_begin, 1, 2 * s)) {
+    for (auto &&sequence :
+         gen_graph_sequences(next(size_begin), size_end, graphs_by_size)) {
+      for (auto &&graph : graphs_by_size[*size_begin]) {
         sequence.push_back(graph);
         co_yield sequence;
         sequence.pop_back();
@@ -142,21 +146,22 @@ gen_graph_sequences(int s, input_iterator auto size_begin,
 }
 
 void print_graph_sequence(
-    const vector<reference_wrapper<ShiftedGraph>> &graph_sequence,
-    const optional<vector<pair<int, int>>> &matching = {}) {
-  cout << "GRAPH SEQUENCE" << "\n";
-  int ss = graph_sequence[0].get().s;
-  for (int y = 2 * ss + 1; y >= 0; --y) {
-    cout << y << '|';
-    for (int i = graph_sequence.size() - 1; i >= 0; --i) {
-      const auto &graph = graph_sequence[i];
-      int xm = -1;
-      int ym = -1;
-      if (i < graph_sequence.size() - 1) {
-        xm = (*matching)[graph_sequence.size() - 2 - i].first;
-        ym = (*matching)[graph_sequence.size() - 2 - i].second;
-      }
-
+    const vector<reference_wrapper<const ShiftedGraph>> &graph_sequence,
+    vector<pair<int, int>> matching = {}) {
+  // cout << "ANTIPATHS:\n";
+  // for (const auto &graph : graph_sequence) {
+  //   for (const auto &[x, y] : graph.get().antipath) {
+  //     cout << format("({},{})", x, y) << " ";
+  //   }
+  //   cout << endl;
+  // }
+  int s = graph_sequence[0].get().s;
+  string alphabet = "ABCDEFGHIJKLMNOPQRST";
+  for (int y = 2 * s + 1; y >= 0; --y) {
+    cout << (y >= 1 ? (char)('0' + y) : '.') << '|';
+    for (const auto &[i, graph] :
+         graph_sequence | views::enumerate | views::reverse) {
+      auto [xm, ym] = (i < matching.size() ? matching[i] : pair{-1, -1});
       int s = graph.get().s;
       int last_x0 = 1;
       for (auto [x0, y0] : graph.get().edges()) {
@@ -164,27 +169,27 @@ void print_graph_sequence(
           for (; last_x0 < x0; ++last_x0) {
             cout << ' ';
           }
-          cout << (x0 == xm && y0 == ym ? '!' : '#');
+          cout << (x0 == xm && y0 == ym ? 'x' : '@');
           ++last_x0;
         }
       }
       for (; last_x0 <= 2 * s; ++last_x0) {
-        if (1 <= y && y <= 2 * ss) {
+        if (1 <= y && y <= 2 * s) {
           cout << " ";
-        } else if (y > 2 * ss) {
+        } else if (y > 2 * s) {
           cout << "-";
         } else {
-          cout << last_x0;
+          cout << last_x0 % 10;
         }
       }
+      cout << '|';
     }
-    cout << '|';
     cout << "\n";
   }
 }
 
 bool check_embedded(
-    const vector<reference_wrapper<ShiftedGraph>> &graph_sequence) {
+    const vector<reference_wrapper<const ShiftedGraph>> &graph_sequence) {
   for (unsigned i = 0; i + 1 < graph_sequence.size(); ++i) {
     if (!graph_sequence[i].get().lies_inside(graph_sequence[i + 1].get())) {
       return false;
@@ -193,8 +198,8 @@ bool check_embedded(
   return true;
 }
 
-void draw_graph(std::vector<int> size_sequence) {
-  optional<vector<pair<int, int>>> matching;
+void draw_graph(std::vector<int> size_sequence,
+                const vector<vector<ShiftedGraph>> &graphs_by_size) {
   cout << "sequence {";
   for (auto it = size_sequence.begin(); next(it) != size_sequence.end(); ++it) {
     cout << *it << ',';
@@ -203,62 +208,60 @@ void draw_graph(std::vector<int> size_sequence) {
   cout << '}' << "\n";
   cout << "doesn't admit a matching, corresponding sequences:\n";
   int s = size_sequence.size();
-  vector<char> used(2 * s + 1);
-  for (const auto &graph_sequence :
-       gen_graph_sequences(s, size_sequence.begin(), size_sequence.end())) {
-    // cerr << "Checking ";
-    // print_graph_sequence(graph_sequence);
+  MatchingState matching(s);
+  for (const auto &graph_sequence : gen_graph_sequences(
+           size_sequence.begin(), size_sequence.end(), graphs_by_size)) {
     bool ok = true;
-    optional<vector<pair<int, int>>> first_matching;
+    vector<pair<int, int>> first_matching;
     for (int i = 0; i < graph_sequence.size(); ++i) {
-      vector<reference_wrapper<ShiftedGraph>> subsequence;
+      vector<reference_wrapper<const ShiftedGraph>> subsequence;
       for (int j = 0; j < graph_sequence.size(); ++j) {
         if (i != j) {
           subsequence.push_back(graph_sequence[j]);
         }
       }
-      ranges::fill(used, 0);
-      auto matching =
-          gen_matching(subsequence.begin(), subsequence.end(), used);
-      if (!matching) {
+      matching.reset();
+      if (!gen_matching(subsequence.begin(), subsequence.end(), matching)) {
         ok = false;
         break;
       }
-      if (i == graph_sequence.size() - 1) {
-        first_matching = matching;
+      if (i + 1 == graph_sequence.size()) {
+        first_matching = matching.matching;
       }
     }
+    // print_graph_sequence(graph_sequence, first_matching);
     if (!ok) {
       continue;
     }
-    ranges::fill(used, 0);
-    if (matching =
-            gen_matching(graph_sequence.begin(), graph_sequence.end(), used);
-        !matching) { //      reverse((*matching).begin(), (*matching).end());
+    matching.reset();
+    if (!gen_matching(graph_sequence.begin(), graph_sequence.end(), matching)) {
       if (!check_embedded(graph_sequence)) {
-        cout << "##############################################" << endl;
-        cout << "NOT EMBEDDED" << endl;
-        cout << "##############################################" << endl;
+        cerr << "###############################" << endl;
+        cerr << "NOT EMBEDDED" << endl;
+        cerr << "###############################" << endl;
       }
       print_graph_sequence(graph_sequence, first_matching);
+      // break;
       // cout << "BREAKING BREAKING BREAKING" << "\n";
+    } else {
     }
   }
 }
 
 int main() {
-  set<vector<int>, greater<vector<int>>> minimums;
+  int s;
+  {
+    string tmp;
+    getline(cin, tmp);
+    s = stoi(tmp);
+  }
+  vector<vector<ShiftedGraph>> graphs_by_size(s * (2 * s - 1) + 1);
+  for (auto &&graph : gen_graphs(s, 1, 2 * s)) {
+    ranges::reverse(graph.antipath);
+    graphs_by_size[graph.edge_count()].push_back(move(graph));
+    //    cerr << "Generating graph..." << endl;
+  }
   string line;
-
-  auto better = [](const vector<int> &x, const vector<int> &y) {
-    for (int i = 0; i < x.size(); ++i) {
-      if (x[i] < y[i]) {
-        return false;
-      }
-    }
-    return true;
-  };
-
   while (getline(cin, line)) {
     istringstream ss(line);
     int n;
@@ -271,27 +274,7 @@ int main() {
       cerr << x << " ";
     }
     cerr << endl;
-    bool best = true;
-    for (const auto &kek : minimums) {
-      if (better(kek, current)) {
-        best = false;
-      }
-    }
-    if (best) {
-      vector<vector<int>> to_erase;
-      for (const auto &kek : minimums) {
-        if (better(current, kek)) {
-          to_erase.push_back(kek);
-        }
-      }
-      for (auto &&v : to_erase) {
-        minimums.erase(std::move(v));
-      }
-      minimums.insert(move(current));
-    }
-  }
-  for (const auto &s : minimums) {
-    draw_graph(s);
+    draw_graph(current, graphs_by_size);
     cout << "-------------------------" << endl;
   }
 }

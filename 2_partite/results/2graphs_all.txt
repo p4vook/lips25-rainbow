@@ -1,0 +1,16 @@
+sequence {2,2}
+doesn't admit a matching, corresponding sequences:
+
+C|--|--|
+B|@ |@ |
+A|@ |x |
+.|12|12|
+
+C|--|--|
+B|  |  |
+A|@@|x@|
+.|12|12|
+-------------------------
+sequence {3,1}
+doesn't admit a matching, corresponding sequences:
+-------------------------

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iterator>
 #include <numeric>
+#include <set>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -14,7 +15,7 @@ struct MatchingState {
   vector<char> used_x;
   vector<char> used_y;
 
-  explicit MatchingState(int s) : used_x(s), used_y(s) {}
+  explicit MatchingState(int s) : used_x(s + 1), used_y(s + 1) {}
 
   void reset() {
     ranges::fill(used_x, 0);
@@ -27,7 +28,7 @@ struct ShiftedGraph {
   vector<pair<int, int>> antipath;
 
   generator<const pair<int, int> &>
-  edges(const optional<MatchingState> &state = nullopt) const {
+  edges(MatchingState *state = nullptr) const {
     int x = 1;
     for (auto [x0, y0] : antipath | views::reverse) {
       for (; x <= x0; ++x) {
@@ -55,7 +56,7 @@ generator<ShiftedGraph &&> gen_graphs(int s, int current_x, int max_y) {
       for (int y = 1; y <= max_y; ++y) {
         for (auto &&graph : gen_graphs(s, x + 1, y - 1)) {
           graph.antipath.emplace_back(x, y);
-          co_yield move(graph);
+          co_yield std::move(graph);
         }
       }
     }
@@ -68,7 +69,7 @@ bool gen_matching(input_iterator auto graphs_begin,
     return true;
   }
   auto next_graph = std::next(graphs_begin);
-  for (const auto &[x0, y0] : graphs_begin->get().edges(state)) {
+  for (const auto &[x0, y0] : graphs_begin->get().edges(&state)) {
     if (state.used_x[x0] || state.used_y[y0]) {
       continue;
     }
@@ -156,20 +157,37 @@ void print_graph_sequence(
   }
 }
 
-void do_stuff(
-    int s, reference_wrapper<const vector<vector<int>>> size_sequences,
-    reference_wrapper<const vector<vector<ShiftedGraph>>> graphs_by_size,
-    reference_wrapper<vector<vector<int>>> results) {
-  for (const auto &size_sequence : size_sequences.get()) {
+bool is_better(const vector<int> &lhs, const vector<int> &rhs) {
+  for (int i = 0; i < lhs.size(); ++i) {
+    if (lhs[i] < rhs[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void do_stuff(int s, const std::ranges::range auto &size_sequences,
+              const vector<vector<ShiftedGraph>> &graphs_by_size,
+              set<vector<int>> &results) {
+  for (const auto &size_sequence : size_sequences) {
+    bool best = true;
+    for (const auto &v : results) {
+      if (is_better(v, size_sequence)) {
+        best = false;
+        break;
+      }
+    }
+    if (!best) {
+      continue;
+    }
     // cerr << "Checking sequence ";
     // for (const int &x : size_sequence) {
     // cerr << x << " ";
     // }
     // cerr << "\n";
     MatchingState state(s);
-    for (const auto &graph_sequence :
-         gen_graph_sequences(size_sequence.begin(), size_sequence.end(),
-                             graphs_by_size.get())) {
+    for (const auto &graph_sequence : gen_graph_sequences(
+             size_sequence.begin(), size_sequence.end(), graphs_by_size)) {
       // print_graph_sequence(graph_sequence);
       state.reset();
       if (gen_matching(graph_sequence.begin(), graph_sequence.end(), state)) {
@@ -193,7 +211,16 @@ void do_stuff(
         // cout << "BREAKING BREAKING BREAKING" << "\n";
         // results->push_back(move(size_sequence));
       } else {
-        results.get().push_back(size_sequence);
+        vector<vector<int>> to_remove;
+        for (const auto &cand : results) {
+          if (is_better(size_sequence, cand)) {
+            to_remove.push_back(cand);
+          }
+        }
+        for (const auto &tmp : to_remove) {
+          results.erase(tmp);
+        }
+        results.insert(size_sequence);
         break;
       }
     }
@@ -204,26 +231,53 @@ int main() {
   int s;
   cin >> s;
   auto size_sequences = gen_size_sequence(s, s, 1) | ranges::to<vector>();
-  static_assert(std::is_same_v<decltype(size_sequences), vector<vector<int>>>);
-  vector<vector<ShiftedGraph>> graphs_by_size(s * s);
+  vector<vector<ShiftedGraph>> graphs_by_size(s * s + 1);
   for (auto &&graph : gen_graphs(s, 1, s)) {
     auto edges = graph.edges();
     graphs_by_size[std::ranges::distance(edges.begin(), edges.end())].push_back(
         move(graph));
   }
-  vector<thread> threads;
-  vector<vector<vector<int>>> results(1);
-  threads.emplace_back(do_stuff, s, cref(size_sequences), cref(graphs_by_size),
-                       ref(results[0]));
-  for (int i = 0; i < threads.size(); ++i) {
-    threads[i].join();
+  int thread_count =
+      min((int)thread::hardware_concurrency(), (int)size_sequences.size());
+  vector<set<vector<int>>> results(thread_count);
+  {
+    vector<jthread> threads;
+    for (int i = 0; i < thread_count; ++i) {
+      threads.emplace_back([&] {
+        do_stuff(s,
+                 size_sequences | views::reverse | views::drop(i) |
+                     views::stride(thread_count),
+                 graphs_by_size, results[i]);
+      });
+    }
   }
-  for (const auto &thrd : results) {
+  set<vector<int>> total = move(results[0]);
+  for (const auto &thrd : results | views::drop(1)) {
     for (const auto &seq : thrd) {
+      bool best = true;
+      for (const auto &cand : total) {
+        if (is_better(cand, seq)) {
+          best = false;
+          continue;
+        }
+      }
+      if (!best) {
+        continue;
+      }
       for (const int &x : seq) {
         cout << x << " ";
       }
-      cout << "\n";
+      cout << endl;
+      vector<vector<int>> to_remove;
+      for (const auto &cand : total) {
+        if (is_better(seq, cand)) {
+          to_remove.push_back(cand);
+        }
+      }
+      for (const auto &tmp : to_remove) {
+        total.erase(tmp);
+      }
+      total.insert(seq);
     }
   }
 }

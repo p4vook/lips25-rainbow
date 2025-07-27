@@ -16,6 +16,7 @@
         pkgs.git
         pkgs.gdb
         pkgs.hyperfine
+        pkgs.gnumake
         llvm.clang-tools
       ];
     };

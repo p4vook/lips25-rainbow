@@ -9,14 +9,13 @@
   let 
   system = "aarch64-darwin";
   pkgs = nixpkgs.legacyPackages."${system}";
-  llvm = pkgs.llvmPackages_20;
+  llvm = pkgs.llvmPackages_21;
   in {
     devShells."${system}".default = pkgs.mkShell.override { stdenv = pkgs.gcc14Stdenv; } {
-      packages = with pkgs; [
-        git
+      packages = [
+        pkgs.git
         pkgs.gdb
         pkgs.hyperfine
-        llvm.libstdcxxClang
         llvm.clang-tools
       ];
     };

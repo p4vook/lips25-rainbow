@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <format>
 #include <generator>
@@ -27,18 +28,11 @@ struct ShiftedGraph {
   int s;
   vector<pair<int, int>> antipath;
 
-  generator<const pair<int, int> &>
-  edges(MatchingState *state = nullptr) const {
+  generator<const pair<int, int> &> edges() const {
     int x = 1;
-    for (auto [x0, y0] : antipath | views::reverse) {
+    for (auto [x0, y0] : antipath) {
       for (; x <= x0; ++x) {
-        if (state && state->used_x[x]) {
-          continue;
-        }
         for (int y = 1; y <= y0; ++y) {
-          if (state && state->used_y[y]) {
-            continue;
-          }
           co_yield {x, y};
         }
       }
@@ -68,20 +62,27 @@ bool gen_matching(input_iterator auto graphs_begin,
   if (graphs_begin == graphs_end) {
     return true;
   }
-  auto next_graph = std::next(graphs_begin);
-  for (const auto &[x0, y0] : graphs_begin->get().edges(&state)) {
-    if (state.used_x[x0] || state.used_y[y0]) {
-      continue;
+  int x = 1;
+  for (auto [x0, y0] : (graphs_begin++)->get().antipath) {
+    for (; x <= x0; ++x) {
+      if (state.used_x[x]) {
+        continue;
+      }
+      for (int y = 1; y <= y0; ++y) {
+        if (state.used_y[y]) {
+          continue;
+        }
+        state.used_x[x] = true;
+        state.used_y[y] = true;
+        if (gen_matching(graphs_begin, graphs_end, state)) {
+          return true;
+        }
+        state.used_x[x] = false;
+        state.used_y[y] = false;
+      }
     }
-    state.used_x[x0] = true;
-    state.used_y[y0] = true;
-    if (gen_matching(next_graph, graphs_end, state)) {
-      return true;
-    }
-    state.used_x[x0] = false;
-    state.used_y[y0] = false;
   }
-  return {};
+  return false;
 }
 
 generator<vector<int> &&> gen_size_sequence(int s, int leftover, int min_size) {
@@ -227,18 +228,20 @@ void do_stuff(int s, const std::ranges::range auto &size_sequences,
   }
 }
 
-int main() {
+int main(int argc, const char *argv[]) {
   int s;
   cin >> s;
   auto size_sequences = gen_size_sequence(s, s, 1) | ranges::to<vector>();
   vector<vector<ShiftedGraph>> graphs_by_size(s * s + 1);
   for (auto &&graph : gen_graphs(s, 1, s)) {
+    ranges::reverse(graph.antipath);
     auto edges = graph.edges();
     graphs_by_size[std::ranges::distance(edges.begin(), edges.end())].push_back(
         move(graph));
   }
-  int thread_count =
-      min((int)thread::hardware_concurrency(), (int)size_sequences.size());
+  int thread_count = (argc == 1 ? min((int)thread::hardware_concurrency(),
+                                      (int)size_sequences.size())
+                                : stoi(argv[1]));
   vector<set<vector<int>>> results(thread_count);
   {
     vector<jthread> threads;

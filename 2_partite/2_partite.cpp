@@ -243,12 +243,13 @@ int main() {
   {
     vector<jthread> threads;
     for (int i = 0; i < thread_count; ++i) {
-      threads.emplace_back([&] {
-        do_stuff(s,
-                 size_sequences | views::reverse | views::drop(i) |
-                     views::stride(thread_count),
-                 graphs_by_size, results[i]);
-      });
+      threads.emplace_back(
+          [s, i, thread_count, &size_sequences, &graphs_by_size, &results] {
+            do_stuff(s,
+                     size_sequences | views::reverse | views::drop(i) |
+                         views::stride(thread_count),
+                     graphs_by_size, results[i]);
+          });
     }
   }
   set<vector<int>> total = move(results[0]);
@@ -264,10 +265,6 @@ int main() {
       if (!best) {
         continue;
       }
-      for (const int &x : seq) {
-        cout << x << " ";
-      }
-      cout << endl;
       vector<vector<int>> to_remove;
       for (const auto &cand : total) {
         if (is_better(seq, cand)) {
@@ -279,5 +276,11 @@ int main() {
       }
       total.insert(seq);
     }
+  }
+  for (const auto &seq : total) {
+    for (const auto &x : seq) {
+      cout << x << " ";
+    }
+    cout << endl;
   }
 }

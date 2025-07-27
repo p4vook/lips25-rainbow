@@ -1,0 +1,33 @@
+sequence {5,1}
+doesn't admit a matching
+
+of a corresponding GRAPH SEQUENCE
+5|--------|
+4|        |
+3|        |
+2|  ##    |
+1| ### #  |
+0|12341234|
+-------------------------
+sequence {4,2}
+doesn't admit a matching
+
+of a corresponding GRAPH SEQUENCE
+5|--------|
+4|        |
+3|        |
+2|  #     |
+1| ### ## |
+0|12341234|
+-------------------------
+sequence {3,3}
+doesn't admit a matching
+
+of a corresponding GRAPH SEQUENCE
+5|--------|
+4|        |
+3|        |
+2|  #   # |
+1| ##  ## |
+0|12341234|
+-------------------------

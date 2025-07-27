@@ -1,0 +1,7 @@
+.direnv
+.envrc
+drawer
+2_partite/2_partite
+perebor
+*.gcda
+
